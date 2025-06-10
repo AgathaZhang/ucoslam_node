@@ -94,8 +94,8 @@ private:
 
     std::map<double, geometry_msgs::PoseStamped> pose_map_; // Map of poses
     pcl::PointCloud<PointXYZRTLT>::Ptr merged_cloud_{new pcl::PointCloud<PointXYZRTLT>()}; // Merged point cloud
-    Eigen::Matrix4f lidar_to_camera_transform_; // Lidar to camera extrinsics
-    std::string lidar_params_file_; // Path to lidar extrinsics file
+    Eigen::Matrix4f lidar_to_camera_transform_;             // Lidar to camera extrinsics
+    std::string lidar_params_file_;                         // Path to lidar extrinsics file
 };
 
 #endif // UCOSLAM_NODE_H
