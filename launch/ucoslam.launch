@@ -1,0 +1,35 @@
+<launch>
+    <!-- 节点 -->
+    <!-- <node pkg="ucoslam" type="ucoslam_node" name="ucoslam_node" output="screen"> -->
+        <!-- 必需参数 -->
+    <group ns="ucoslam_node">
+        <param name="bag_file" value="/home/kilox/datasets/makerslam/2025-04-22-20-21-27.bag"/>
+        <param name="camera_params_file" value="$(find ucoslam)/config/v4/camera_params.yml"/>
+        <param name="image_topic" value="/usb_cam_left/image_raw"/>
+        <param name="lidar_topic" value="/livox/lidar"/>
+        <param name="params_file" value="$(find ucoslam)/config/v4/ucoslam_params.yml"/>
+        <param name="map_file" value=""/>
+        <param name="vocab_file" value="$(find ucoslam)/config/v4/orb_vocab.fbow"/>
+        <param name="lidar_params_file" value="$(find ucoslam)/config/v4/lidar_params.yml"/>
+        <param name="loc_only" value="false"/>
+        <param name="undistort" value="true"/>
+        <param name="debug_level" value="0"/>
+
+        <param name="param_verify" value="yes input param success"/>
+
+        <param name="save_merged_pointcloud_file" value="/home/kilox/datasets/map/test.pcd"/>
+        <param name="save_map_file" value="/home/kilox/datasets/map/test.map"/>
+
+        <!-- ROS话题配置 -->
+        <param name="~camera_pose" value="camera_pose"/>
+        <param name="~camera_path" value="camera_path"/>
+        <param name="~processed_image" value="processed_image"/>
+        <param name="~point_cloud" value="point_cloud"/>
+        <param name="~merged_point_cloud" value="merged_point_cloud"/>
+    <!-- </node> -->
+    </group>
+</launch>
+
+<!-- kilox@kilox-System-Product-Name:~/workspace/ucoslam2$ roslaunch ucoslam_ucoslam.launch
+RLException: [ucoslam_ucoslam.launch] is not a launch file name
+The traceback for the exception was written to the log file -->
