@@ -1,0 +1,43 @@
+%YAML:1.0
+---
+kpDescriptorType: orb                       # 关键点描述子类型（支持 orb、akaze、sift 等）
+KPNonMaximaSuppresion: 0                    # 是否进行非极大值抑制（0 表示不启用）
+targetFocus: -1.                            # 目标焦点距离，负值表示禁用焦点引导提取
+minKFConfidence: 6.0000002384185791e-01     # 设为关键帧的最小置信度阈值（0~1）
+maxNewPoints: 350                           # 每帧允许新添加的地图点数量上限
+enableLoopClosure: 1                        # 是否启用回环检测（1 表示启用）
+targetWidth: 1.                             # 图像宽度归一化目标值（1 表示保持原尺寸）
+maxFeatures: 4000                           # 每帧最大提取特征点数量
+nthreads_feature_detector: 2                # 特征点提取使用的线程数
+nOctaveLevels: 8                            # 金字塔层数
+scaleFactor: 1.2000000476837158e+00         # 图像金字塔缩放因子（每层之间）
+runSequential: 1                            # 是否顺序执行（1 表示顺序执行，0 表示多线程）
+detectMarkers: 1                            # 是否启用 ArUco marker 检测
+forceInitializationFromMarkers: 0           # 是否强制仅用 marker 初始化地图
+aruco_allowOneFrameInitialization: 1        # 是否允许使用单帧 marker 完成初始化
+reLocalizationWithKeyPoints: 1              # 允许使用关键点进行重定位
+reLocalizationWithMarkers: 1                # 允许使用 marker 进行重定位
+inPlaneMarkers: 0                           # 指示 marker 是否共面（用于优化）
+saveImageInMap: 0                           # 是否将图像保存在地图中
+minBaseLine: 7.0000000298023224e-02         # 最小基线距离（单位：米），用于关键帧筛选
+detectKeyPoints: 1                          # 是否检测关键点（0 表示跳过）
+removeKeyPointsIntoMarkers: 1               # 是否去除 marker 区域内的关键点
+minDescDistance: 3.4028234663852886e+38     # 最小描述子匹配距离（默认极大值）
+baseline_medianDepth_ratio_min: 9.9999997764825821e-03  # 基线与深度比的最小值（用于初始化）
+aruco_markerSize: 0.186                     # marker 实际物理边长（单位：米）
+projDistThr: 15                             # 投影误差阈值（像素）
+maxVisibleFramesPerMarker: 10               # 每个 marker 允许关联的最大帧数
+minNumProjPoints: 3                         # 判断可用帧时最少投影点数量
+keyFrameCullingPercentage: 8.0000001192092896e-01  # 关键帧冗余剔除百分比
+thRefRatio: 8.9999997615814209e-01          # 判断参考帧的参考比阈值
+aruco_minerrratio_valid: 3.                 # marker 有效姿态估计的最大误差比（越小越严）
+aruco_minNumFramesRequired: 3               # 单个 marker 至少被多少帧观测才视为有效
+markersOptWeight: 5.0000000000000000e-01    # marker 在图优化中的权重（与地图点相对）
+minMarkersForMaxWeight: 5                   # marker 数量达到此值后采用最大权重
+autoAdjustKpSensitivity: 0                  # 是否自动调整关键点检测灵敏度
+global_optimizer: g2o                       # 后端图优化使用的库（如 g2o、ceres）
+aruco-dictionary: TAG36h10                  # 使用的 ArUco 字典类型
+aruco-detectMode: DM_NORMAL                 # ArUco marker 检测模式（普通/快速）
+aruco-cornerRefinementM: CORNER_SUBPIX      # marker 角点精细化方法（亚像素）
+aruco-minSize: 0.                           # marker 检测的最小尺寸（像素），0 表示不限制
+extraParams: ""                             # 预留额外参数字段（字符串）

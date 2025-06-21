@@ -30,6 +30,11 @@
 #include "map.h"
 #include "basictypes/cvversioning.h"
 
+#include <visualization_msgs/Marker.h>          // 06.17 
+#include <visualization_msgs/MarkerArray.h>     // 06.17 发布aruco_array标记
+#include <tf/transform_datatypes.h>             // 06.17 用于转换坐标系
+
+
 struct PointXYZRTLT {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     PCL_ADD_POINT4D;
@@ -51,6 +56,9 @@ public:
     void processPointCloud(const sensor_msgs::PointCloud2ConstPtr& cloud_msg);
     void publishPose(const cv::Mat& camPose_c2g, const cv_bridge::CvImageConstPtr& cv_image);
     void publishPointCloud();
+    void publishMarkerArray();     // Agatha 06.17 发布aruco_array标记
+    // void publishMarker();       // Agatha 06.17 发布aruco标记
+    // void publishPath();         // Agatha 06.17 发布相机路径
     void loadLidarExtrinsics(const std::string& file);
     void publishMergedPointCloud();
     void TransformToEnd(PointXYZRTLT const *const pi, PointXYZRTLT *const po, const double end_time, Eigen::Quaternionf q_last_curr, Eigen::Vector3f t_last_curr);
@@ -63,6 +71,7 @@ private:
     ros::Publisher cam_pose_pub_;
     ros::Publisher pointcloud_pub_;
     ros::Publisher path_pub_;
+    ros::Publisher marker_array_pub_;            // 06.17 Publisher for aruco markers
     ros::Publisher processed_image_pub_;
     ros::Publisher merged_pointcloud_pub_; // Publisher for merged point cloud
     nav_msgs::Path path_;

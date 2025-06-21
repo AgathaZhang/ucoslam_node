@@ -214,60 +214,6 @@ void UcoSlamNode::publishMergedPointCloud() {
     merged_pointcloud_pub_.publish(merged_msg);
 }
 
-void UcoSlamNode::publishMarkerArray() {
-    if (!TheMap) return;
-
-    visualization_msgs::MarkerArray marker_array;
-    int id = 0;
-
-    for (const auto& m_pair : TheMap->map_markers) {
-        const auto& marker = m_pair.second;
-        if (!marker.pose_g2m.isValid()) continue;
-
-        visualization_msgs::Marker marker_msg;
-        marker_msg.header.stamp = ros::Time::now();
-        marker_msg.header.frame_id = "map";
-        marker_msg.ns = "aruco_markers";
-        marker_msg.id = id++;
-        marker_msg.type = visualization_msgs::Marker::CUBE;
-        marker_msg.action = visualization_msgs::Marker::ADD;
-        marker_msg.scale.x = 0.2;
-        marker_msg.scale.y = 0.2;
-        marker_msg.scale.z = 0.01;
-        marker_msg.color.a = 1.0;
-        marker_msg.color.r = 1.0;
-        marker_msg.color.g = 0.0;
-        marker_msg.color.b = 0.0;
-
-        // 从pose_g2m提取位姿信息
-        cv::Mat Rt = marker.pose_g2m.inv(); // 因为 pose_g2m 是从全局到marker，rviz中要画marker相对于全局的位置
-        cv::Mat R = Rt(cv::Range(0, 3), cv::Range(0, 3));
-        cv::Mat t = Rt(cv::Range(0, 3), cv::Range(3, 4));
-
-        // 转换为 geometry_msgs::Pose
-        tf::Matrix3x3 tf3d(
-            R.at<float>(0,0), R.at<float>(0,1), R.at<float>(0,2),
-            R.at<float>(1,0), R.at<float>(1,1), R.at<float>(1,2),
-            R.at<float>(2,0), R.at<float>(2,1), R.at<float>(2,2)
-        );
-        tf::Quaternion q;
-        tf3d.getRotation(q);
-
-        marker_msg.pose.position.x = t.at<float>(0);
-        marker_msg.pose.position.y = t.at<float>(1);
-        marker_msg.pose.position.z = t.at<float>(2);
-        marker_msg.pose.orientation.x = q.x();
-        marker_msg.pose.orientation.y = q.y();
-        marker_msg.pose.orientation.z = q.z();
-        marker_msg.pose.orientation.w = q.w();
-
-        marker_array.markers.push_back(marker_msg);
-    }
-
-    marker_array_pub_.publish(marker_array);
-}
-
-
 // std_msgs/Header header         // 时间戳与参考坐标系
 // uint32_t height                // 点云高度（行数）
 // uint32_t width                 // 点云宽度（列数），height × width = 点数
@@ -277,6 +223,7 @@ void UcoSlamNode::publishMarkerArray() {
 // std::vector<sensor_msgs::PointField> fields  // 点字段定义，比如 x, y, z, rgb
 // bool is_dense                 // 是否为密集点云（true：无非法点）
 // std::vector<uint8_t> data     // 点数据字节流（按照 fields 描述的格式组织）
+
 
 // 视觉特征点点云
 void UcoSlamNode::publishPointCloud() {
@@ -365,8 +312,7 @@ UcoSlamNode::UcoSlamNode(ros::NodeHandle& nh, ros::NodeHandle& private_nh) :
     path_pub_ = nh_.advertise<nav_msgs::Path>("camera_path", 10);                   // 相机路径（Path 消息）发布者
     processed_image_pub_ = nh_.advertise<sensor_msgs::Image>("processed_image", 10);// 处理后的图像（如已矫正图像，用于 debug 或可视化）
     merged_pointcloud_pub_ = nh.advertise<sensor_msgs::PointCloud2>("merged_point_cloud", 10);// 融合后的激光雷达点云（多帧累积之后的全局点云）合并后的点云（用于可视化）
-    
-    marker_array_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("marker_array", 10);    // 发布marker可视化
+
     // 初始化路径消息
     path_.header.frame_id = "map";      // 初始化路径消息的坐标系为 "map"，与发布的 pose 保持一致，确保 RViz 中坐标系统一
 }
@@ -388,17 +334,17 @@ void UcoSlamNode::processBagFile(const std::string& bag_file) {
 
         TheMap = std::make_shared<ucoslam::Map>();              // 创建地图对象,对象位于node空间中
         if (!map_file_.empty()) {
-            TheMap->readFromFile(map_file_);                    // 如果指定了地图文件，则加载已有地图     
+            TheMap->readFromFile(map_file_);        
         }
 
-        Slam.setParams(TheMap, params, vocab_file_);            // TODO 06.12 Finish 06.16 实际上 call map_initializer 设置UCOSLAM参数，包括地图、参数和词典文件
+        Slam.setParams(TheMap, params, vocab_file_);            // 设置UCOSLAM参数，包括地图、参数和词典文件
 
         if (vocab_file_.empty() && map_file_.empty()) {
             ROS_WARN("Warning!! No VOCABULARY INDICATED. KEYPOINT RELOCALIZATION IMPOSSIBLE WITHOUT A VOCABULARY FILE!!!!!");
         }
 
         if (loc_only_) {
-            Slam.setMode(ucoslam::MODE_LOCALIZATION);           // 如果开启了纯定位模式，则设置UCOSLAM为定位模式
+            Slam.setMode(ucoslam::MODE_LOCALIZATION);
         }
 
         // 初始化图像处理
@@ -418,7 +364,7 @@ void UcoSlamNode::processBagFile(const std::string& bag_file) {
                 );
             }
             image_params.Distorsion.setTo(cv::Scalar::all(0));
-        }   // 如果需要去畸变处理，则初始化去畸变映射
+        }
 
         // 打开bag文件
         rosbag::Bag bag;
@@ -445,18 +391,14 @@ void UcoSlamNode::processBagFile(const std::string& bag_file) {
                             in_image = auxImage;
                         }
 
-                        // 处理图像并获取相机姿态       
+                        // 处理图像并获取相机姿态
                         cv::Mat camPose_c2g = Slam.process(in_image, image_params, frameIndex);
 
                         // 发布位姿
                         publishPose(camPose_c2g, cv_image);
 
                         // 发布点云
-                        publishPointCloud();        // TODO 发布点云
-
-                        publishMarkerArray();            // 发布地图标记
-
-                        // publishPath();              // 发布相机路径
+                        publishPointCloud();    // TODO 发布点云
 
                         // 发布处理后的图像
                         sensor_msgs::ImagePtr processed_msg = cv_bridge::CvImage(cv_image->header, "bgr8", in_image).toImageMsg();
@@ -469,6 +411,25 @@ void UcoSlamNode::processBagFile(const std::string& bag_file) {
                 }
             }
         }
+
+        // 处理激光雷达点云消息
+        for (const rosbag::MessageInstance& msg : view) {
+            if (msg.getTopic() == lidar_topic_) {
+                sensor_msgs::PointCloud2ConstPtr cloud_msg = msg.instantiate<sensor_msgs::PointCloud2>();
+                if (cloud_msg) {
+                    processPointCloud(cloud_msg);
+                }
+            }
+        }
+
+        if (pcl::io::savePCDFileBinary(save_merged_pointcloud_file_, *merged_cloud_) == -1) {
+            PCL_ERROR("Couldn't write merged point cloud to file: %s\n", save_merged_pointcloud_file_.c_str());
+        } else {
+            ROS_INFO("Saved merged point cloud to file: %s", save_merged_pointcloud_file_.c_str());
+        }
+
+        // 保存Map
+        TheMap->saveToFile(save_map_file_);
 
     } catch (const std::exception &ex) {
         ROS_ERROR("error: %s", ex.what());

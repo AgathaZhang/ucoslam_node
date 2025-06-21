@@ -228,19 +228,40 @@ add_compile_options(-g)
 
 # 设置编译类型为 Debug，并添加调试信息  25.06.09
 set(CMAKE_BUILD_TYPE Debug)
+# set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
-set(cv_bridge_DIR "/home/kilox/workspace/3rdparty/cv_bridge_noetic/share/cv_bridge/cmake")
-set(OpenCV_DIR "/home/kilox/workspace/3rdparty/opencv-4.5.5/lib/cmake/opencv4")
-set(PCL_DIR "/home/kilox/workspace/3rdparty/pcl-1.15/share/pcl-1.15")
-find_package(OpenCV REQUIRED)
+
+# set(cv_bridge_DIR "/home/kilox/workspace/3rdparty/cv_bridge_noetic/share/cv_bridge/cmake")
+# set(cv_bridge_DIR "/home/kilox/cloud_mapping/src/ucoslam2/3rdparty/cv_bridge_noetic")
+# set(cv_bridge_DIR "/home/kilox/cloud_mapping/src/ucoslam2/3rdparty/cv_bridge_noetic/share/cv_bridge/cmake")
+
+# set(OpenCV_DIR "/home/kilox/workspace/3rdparty/opencv-4.5.5/lib/cmake/opencv4") # add necessary in desktop kilox
+# set(OpenCV_DIR "/home/kilox/cloud_mapping/src/ucoslam2/3rdparty/opencv-4.5.5/lib/cmake/opencv4") # add necessary in docker
+# set(OpenCV_DIR "/home/kilox/cloud_mapping/src/ucoslam2/3rdparty/opencv-4.5.5/build")
+set(OpenCV_DIR "/usr/lib/x86_64-linux-gnu/cmake/opencv4") # 06.21
+
+
+# set(PCL_DIR "/home/kilox/workspace/3rdparty/pcl-1.15/share/pcl-1.15") # 先不设置 06.20
+# set(PCL_DIR "/home/kilox/cloud_mapping/src/ucoslam2/3rdparty/pcl-1.15/share/pcl-1.15")
+
+find_package(OpenCV 4.2.0 REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Ceres REQUIRED)
 find_package(PCL REQUIRED)
 find_package(yaml-cpp REQUIRED)
+
+# 重点：加入算法库目录 old_cmake 06.19
+# add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../ucoslam_or ${CMAKE_BINARY_DIR}/ucoslam_or_build)
+# message(STATUS "Build add_subdirectory ucoslam_or")
+
+
+
 # 告诉CMake到哪里找 ucoslamConfig.cmake
-set(ucoslam_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../install/share/ucoslam")
-find_package(ucoslam REQUIRED )
+# set(ucoslam_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../install/share/ucoslam")
+# find_package(ucoslam REQUIRED )
+# message(STATUS "cv_bridge_DIR is---------------------------------------: ${cv_bridge_DIR}")
+message(STATUS "OpenCV_DIR is---------------------------------------: ${OpenCV_DIR}")
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   rosbag
@@ -277,17 +298,22 @@ include_directories(
     ${CERES_INCLUDE_DIRS}
     ${PCL_INCLUDE_DIRS}
     ${YAML_CPP_INCLUDE_DIRS}
-    ${ucoslam_INCLUDE_DIRS}
+    # ${ucoslam_INCLUDE_DIRS}
 )
+# 移动位置
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../Dev_ucoslam ${CMAKE_BINARY_DIR}/Dev_ucoslam_build)
+message(STATUS "Build add_subdirectory Dev_ucoslam")
+
 add_executable(ucoslam_node src/ucoslam_node.cpp)
 target_link_libraries(ucoslam_node
     PRIVATE
+    ucoslam
     ${catkin_LIBRARIES}
     ${OpenCV_LIBS}
     ${PCL_LIBRARIES}
     ${Eigen3_LIBRARIES}
     ${YAML_CPP_LIBRARIES}
-    ${ucoslam_LIBS}
+    # ${ucoslam_LIBS}
 )
 
 install(TARGETS ucoslam_node
