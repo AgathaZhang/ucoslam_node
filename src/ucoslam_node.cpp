@@ -3,6 +3,8 @@
 
 
 #include "ucoslam_node.h"
+// #define EIGEN_DONT_ALIGN_STATICALLY         // Eigen 不对齐静态分配
+
 
 // 对时间辍进行处理只保留小数点后两位
 double UcoSlamNode::fixNum(double num) {
