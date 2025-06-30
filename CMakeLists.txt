@@ -218,7 +218,7 @@
 ### --------------------------------------------------------------------------------------------
 
 cmake_minimum_required(VERSION 3.10)
-project(ucoslam LANGUAGES CXX)
+project(ucoslam LANGUAGES CXX C)    # 针对使用catkin build 时候的报错修改 project(ucoslam LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -238,7 +238,6 @@ add_compile_definitions(
 # 设置编译选项，-g 用于生成调试信息 25.06.09
 add_compile_options(-g)
 # 设置编译类型为 Debug，并添加调试信息  25.06.09
-
 set(CMAKE_BUILD_TYPE Debug)
 # set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")

@@ -34,6 +34,8 @@
 #include <visualization_msgs/MarkerArray.h>     // 06.17 发布aruco_array标记
 #include <tf/transform_datatypes.h>             // 06.17 用于转换坐标系
 
+#include <image_transport/image_transport.h>    // rviz 可视化去畸变图
+
 
 struct PointXYZRTLT {
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -52,7 +54,9 @@ public:
     UcoSlamNode(ros::NodeHandle& nh, ros::NodeHandle& private_nh);
     ~UcoSlamNode();
 
-    void processBagFile(const std::string& bag_file);
+    // void processBagFile(const std::string& bag_file);
+    void imshow_in_Rviz(const cv::Mat& img);
+    void processBagFile();
     void processPointCloud(const sensor_msgs::PointCloud2ConstPtr& cloud_msg);
     void publishPose(const cv::Mat& camPose_c2g, const cv_bridge::CvImageConstPtr& cv_image);
     void publishPointCloud();
@@ -73,11 +77,22 @@ private:
     ros::Publisher path_pub_;
     ros::Publisher marker_array_pub_;            // 06.17 Publisher for aruco markers
     ros::Publisher processed_image_pub_;
-    ros::Publisher merged_pointcloud_pub_; // Publisher for merged point cloud
+    ros::Publisher merged_pointcloud_pub_;       // Publisher for merged point cloud
+
+    image_transport::ImageTransport rviz_img_;
+    image_transport::Publisher rviz_img_pub_;       // rviz show undistortion image 06.27
+
     nav_msgs::Path path_;
 
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
+
+    // VO output file_path 06.26
+    std::string full_trajectory_total_path;
+    std::string full_trajectory_path;
+    std::string camera_trajectory_path;
+    std::string marker_path;
+    std::string output_path = "/home/kilox/cloud_mapping/src/ucoslam2/test_bag/outputfile";
 
     std::string bag_file_;
     std::string camera_params_file_;

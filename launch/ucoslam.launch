@@ -1,12 +1,12 @@
 <launch>
     <!-- 节点 -->
-    <node pkg="ucoslam" type="ucoslam_node" name="ucoslam_node" output="screen" launch-prefix="gdb -ex run - -args">
+    <!-- <node pkg="ucoslam" type="ucoslam_node" name="ucoslam_node" output="screen" launch-prefix="gdb -ex run - -args"> -->
         <!-- 必需参数 -->
-    <!-- <group ns="ucoslam_node"> -->
+    <group ns="ucoslam_node">
         <!-- <param name="bag_file" value="/home/kilox/datasets/makerslam/2025-04-22-20-21-27.bag"/> -->
         <!-- <param name="bag_file" value="/home/kilox/datasets/makerslam/2025-04-22-23-23-35.bag"/> -->
-        <!-- <param name="bag_file" value="/home/kilox/cloud_mapping/src/ucoslam2/test_bag/markerslam/2025-04-22-20-21-27.bag"/> -->
-        <param name="bag_file" value="/home/kilox/cloud_mapping/src/ucoslam2/test_bag/markerslam/2025-04-22-23-23-35.bag"/>
+        <param name="bag_file" value="/home/kilox/cloud_mapping/src/ucoslam2/test_bag/markerslam/2025-04-22-20-21-27.bag"/>
+        <!-- <param name="bag_file" value="/home/kilox/cloud_mapping/src/ucoslam2/test_bag/markerslam/2025-04-22-23-23-35.bag"/> -->
         <param name="camera_params_file" value="$(find ucoslam)/config/v4/camera_params.yml"/>
         <param name="image_topic" value="/usb_cam_left/image_raw"/>
         <param name="lidar_topic" value="/livox/lidar"/>
@@ -30,8 +30,8 @@
         <param name="~processed_image" value="processed_image"/>
         <param name="~point_cloud" value="point_cloud"/>
         <param name="~merged_point_cloud" value="merged_point_cloud"/>
-    <!-- </group> -->
-    </node>
+    </group>
+    <!-- </node> -->
 </launch>
 
 <!-- kilox@kilox-System-Product-Name:~/workspace/ucoslam2$ roslaunch ucoslam_ucoslam.launch

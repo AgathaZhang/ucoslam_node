@@ -336,14 +336,19 @@ void UcoSlamNode::publishPointCloud() {
 }
 // constructure function
 UcoSlamNode::UcoSlamNode(ros::NodeHandle& nh, ros::NodeHandle& private_nh) : 
-    nh_(nh), private_nh_(private_nh) {
+    nh_(nh), private_nh_(private_nh),rviz_img_(nh){
 
     std::string verify; 
     private_nh_.param("param_verify", verify, std::string("not_set"));
     ROS_INFO_STREAM("[DEBUG] Parameter param_verify = " << verify);  
 
     // 从ROS参数服务器获取参数
-    private_nh_.param("save_merged_pointcloud_file", save_merged_pointcloud_file_, std::string(""));    // 保存合并后的点云文件
+    // private_nh_.param("full_trajectory_total_path", full_trajectory_total_path, output_path); 
+    // private_nh_.param("full_trajectory_path", full_trajectory_path, output_path);
+    // private_nh_.param("camera_trajectory_path", camera_trajectory_path, output_path);
+    // private_nh_.param("marker_path", marker_path, output_path);
+
+    private_nh_.param("save_merged_pointcloud_file", save_merged_pointcloud_file_, std::string(""));    // 保存合并后的点云文件路径
     private_nh_.param("save_map_file", save_map_file_, std::string(""));                                // 最终视觉地图的保存路径
     private_nh_.param("bag_file", bag_file_, std::string(""));                                          // 需要处理的 ROS bag 文件路径
     private_nh_.param("camera_params_file", camera_params_file_, std::string(""));                      // 相机内参配置文件路径
@@ -361,7 +366,8 @@ UcoSlamNode::UcoSlamNode(ros::NodeHandle& nh, ros::NodeHandle& private_nh) :
     loadLidarExtrinsics(lidar_params_file_);        // 加载激光雷达到相机的外参矩阵（从指定的 YAML 文件读取 4×4 变换矩阵）
 
     // 定义ROS发布者
-    // Publisher for point cloud
+    rviz_img_pub_ = rviz_img_.advertise("/ucoslam/image_debug", 10);           // 06.27 创建一个 publisher，发布话题“/ucoslam/image_debug”
+
     pointcloud_pub_ = nh.advertise<sensor_msgs::PointCloud2>("point_cloud", 10);    // 视觉地图中的特征点点云（用于可视化）
     cam_pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("camera_pose", 10);   // 相机当前帧在世界坐标系下的位姿（PoseStamped 消息）位姿发布者
     path_pub_ = nh_.advertise<nav_msgs::Path>("camera_path", 10);                   // 相机路径（Path 消息）发布者
@@ -375,8 +381,21 @@ UcoSlamNode::UcoSlamNode(ros::NodeHandle& nh, ros::NodeHandle& private_nh) :
 
 UcoSlamNode::~UcoSlamNode() {}
 
+
+void UcoSlamNode::imshow_in_Rviz(const cv::Mat& img){
+
+    if (!img.empty()) {
+        // 转换为 ROS 图像消息（BGR8格式）
+        sensor_msgs::ImagePtr msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", img).toImageMsg();
+        msg->header.stamp = ros::Time::now(); // 时间戳可以用于 RViz 显示同步
+
+        // 发布消息
+        rviz_img_pub_.publish(msg);
+    }
+}
+
 // 处理bag文件
-void UcoSlamNode::processBagFile(const std::string& bag_file) {
+void UcoSlamNode::processBagFile() {
     try {
         // 初始化UCOSLAM
         Slam.setDebugLevel(debug_level_);
@@ -424,7 +443,7 @@ void UcoSlamNode::processBagFile(const std::string& bag_file) {
 
         // 打开bag文件
         rosbag::Bag bag;
-        bag.open(bag_file, rosbag::bagmode::Read);
+        bag.open(bag_file_, rosbag::bagmode::Read);
 
         // 查询图像话题
         std::vector<std::string> topics = {image_topic_, lidar_topic_};
@@ -433,28 +452,35 @@ void UcoSlamNode::processBagFile(const std::string& bag_file) {
         // 处理bag文件中的图像消息
         int frameIndex = 0;
         for (const rosbag::MessageInstance &msg : view) {
-            if (msg.getTopic() == image_topic_) {
+            if (msg.getTopic() == image_topic_) {       // TODO msg.getTopic() == image_topic_这个行为是做了挑选和舍弃吗
                 try {
                     sensor_msgs::ImageConstPtr image_msg = msg.instantiate<sensor_msgs::Image>();
                     if (image_msg) {
                         // 将ROS图像消息转换为OpenCV图像
                         cv_bridge::CvImagePtr cv_image = cv_bridge::toCvCopy(image_msg, sensor_msgs::image_encodings::BGR8);
-                        in_image = cv_image->image;
-
-                        // 图像畸变矫正（如果需要）// TODO
+                        in_image = cv_image->image;     // 取出了图像Mat
+                        imshow_in_Rviz(in_image);
+                        // 图像畸变矫正
                         if (undistort_) {
                             cv::remap(in_image, auxImage, undistMap[0], undistMap[1], cv::INTER_LINEAR);
+                            
                             in_image = auxImage;
                         }
 
                         // 处理图像并获取相机姿态       
-                        cv::Mat camPose_c2g = Slam.process(in_image, image_params, frameIndex);
+                        cv::Mat camPose_c2g = Slam.process(in_image/*newframe*/, image_params/*K*/, frameIndex);
+                        
+
+                        // TODO 相机到雷达帧的位姿
+                        // TODO Aruco码相对雷达帧的位姿
+                        // TODO 用于 Netvlad 的图片信息
+
 
                         // 发布位姿
                         publishPose(camPose_c2g, cv_image);
 
                         // 发布点云
-                        publishPointCloud();        // TODO 发布点云
+                        publishPointCloud();               // TODO 发布点云
 
                         publishMarkerArray();            // 发布地图标记
 
@@ -470,6 +496,12 @@ void UcoSlamNode::processBagFile(const std::string& bag_file) {
                     ROS_ERROR("cv_bridge error: %s", e.what());
                 }
             }
+            if (msg.getTopic() == lidar_topic_) {   // 处理Lidar数据
+                
+                // TODO 雷达全部帧位姿(要从r3live拿)
+                // TODO 雷达关键帧位姿
+
+            } 
         }
 
     } catch (const std::exception &ex) {
@@ -488,11 +520,11 @@ int main(int argc, char **argv) {
 
         UcoSlamNode ucoSlamNode(nh, private_nh);
 
-        // 从ROS参数服务器获取bag文件路径
-        std::string bag_file;
-        private_nh.param("bag_file", bag_file, std::string(""));
+        // // 从ROS参数服务器获取bag文件路径
+        // std::string bag_file;
+        // private_nh.param("bag_file", bag_file, std::string(""));
 
-        ucoSlamNode.processBagFile(bag_file);
+        ucoSlamNode.processBagFile();
 
     } catch (const std::exception &ex) {
         ROS_ERROR("error: %s", ex.what());
