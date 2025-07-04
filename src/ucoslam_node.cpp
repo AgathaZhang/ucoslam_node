@@ -101,7 +101,7 @@ void UcoSlamNode::publishPose(const cv::Mat& camPose_c2g, const cv_bridge::CvIma
 
         // 提取旋转矩阵
         cv::Mat rotation = camPose_c2g(cv::Rect(0, 0, 3, 3)); // 左上角3x3子矩阵
-
+        std::cout << "rotation: " << rotation << std::endl;
         // 将cv::Mat转换为Eigen::Matrix3d
         Eigen::Matrix3d R_WtoC;
         for (int i = 0; i < 3; ++i) {
@@ -111,7 +111,7 @@ void UcoSlamNode::publishPose(const cv::Mat& camPose_c2g, const cv_bridge::CvIma
         }
 
         Eigen::Vector3d T_WinC(camPose_c2g.at<float>(0, 3), camPose_c2g.at<float>(1, 3), camPose_c2g.at<float>(2, 3));
-/**
+
         Eigen::Matrix3d R_CtoW = R_WtoC.transpose();    // 旋转矩阵转置 R_CtoW 表示世界相对于当前相机帧的旋转 
         Eigen::Vector3d T_CinW = -R_CtoW * T_WinC;      // 世界相对于当前相机帧的平移 = 世界相对于当前相机的旋转 * -相机相对于世界的平移
 
@@ -125,22 +125,6 @@ void UcoSlamNode::publishPose(const cv::Mat& camPose_c2g, const cv_bridge::CvIma
         pose_msg.pose.orientation.y = quaternion.y();
         pose_msg.pose.orientation.z = quaternion.z();
         pose_msg.pose.orientation.w = quaternion.w();
-*/
-// 改写
-        Eigen::Quaterniond quaternion(R_WtoC);
-
-        pose_msg.pose.position.x = T_WinC(0);
-        pose_msg.pose.position.y = T_WinC(1);
-        pose_msg.pose.position.z = T_WinC(2);
-
-        pose_msg.pose.orientation.x = quaternion.x();
-        pose_msg.pose.orientation.y = quaternion.y();
-        pose_msg.pose.orientation.z = quaternion.z();
-        pose_msg.pose.orientation.w = quaternion.w();
-//
-
-
-
 
 
         cam_pose_pub_.publish(pose_msg);        // 世界相对于当前帧相机的位姿
