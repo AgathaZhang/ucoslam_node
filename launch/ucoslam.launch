@@ -5,8 +5,9 @@
     <group ns="ucoslam_node">
         <!-- <param name="bag_file" value="/home/kilox/datasets/makerslam/2025-04-22-20-21-27.bag"/> -->
         <!-- <param name="bag_file" value="/home/kilox/datasets/makerslam/2025-04-22-23-23-35.bag"/> -->
-        <param name="bag_file" value="/home/kilox/cloud_mapping/src/ucoslam2/test_bag/markerslam/2025-04-22-20-21-27.bag"/>
+        <!-- <param name="bag_file" value="/home/kilox/cloud_mapping/src/ucoslam2/test_bag/markerslam/2025-04-22-20-21-27.bag"/> -->
         <!-- <param name="bag_file" value="/home/kilox/cloud_mapping/src/ucoslam2/test_bag/markerslam/2025-04-22-23-23-35.bag"/> -->
+        <param name="bag_file" value="/home/kilox/cloud_mapping/src/ucoslam2/test_bag/markerslam/2025-04-22-23-24-15.bag"/>
         <param name="camera_params_file" value="$(find ucoslam)/config/v4/camera_params.yml"/>
         <param name="image_topic" value="/usb_cam_left/image_raw"/>
         <param name="lidar_topic" value="/livox/lidar"/>

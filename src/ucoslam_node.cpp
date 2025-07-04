@@ -10,6 +10,7 @@
 double UcoSlamNode::fixNum(double num) {
     double factor = 1e2; // 放大1e2倍
     num = std::trunc(num * factor) / factor; // 截断小数点后两位
+    // return std::trunc(num);
     return num;
 }
 
@@ -80,9 +81,16 @@ cv::Mat UcoSlamNode::resize(cv::Mat& in, cv::Size size) {
 // 发布相机位姿
 void UcoSlamNode::publishPose(const cv::Mat& camPose_c2g, const cv_bridge::CvImageConstPtr& cv_image) {
     try {
+        // cv::Mat camPose_c2g = camPose_c2g_or;
         // 检查矩阵是否为空
         if (camPose_c2g.empty()) {
             ROS_WARN("SLAM cannot determine the camera pose for the current frame");
+            // TODO 保留 R|t = 1|1
+        // camPose_c2g = (cv::Mat_<float>(4,4) << 
+        //                             1, 0, 0, 0,
+        //                             0, 1, 0, 0,
+        //                             0, 0, 1, 0,
+        //                             0, 0, 0, 1);
             return;
         }
 
@@ -102,26 +110,44 @@ void UcoSlamNode::publishPose(const cv::Mat& camPose_c2g, const cv_bridge::CvIma
             }
         }
 
-        Eigen::Vector3d P_WinC(camPose_c2g.at<float>(0, 3), camPose_c2g.at<float>(1, 3), camPose_c2g.at<float>(2, 3));
-
-        Eigen::Matrix3d R_CtoW = R_WtoC.transpose();
-        Eigen::Vector3d P_CinW = -R_CtoW * P_WinC;
+        Eigen::Vector3d T_WinC(camPose_c2g.at<float>(0, 3), camPose_c2g.at<float>(1, 3), camPose_c2g.at<float>(2, 3));
+/**
+        Eigen::Matrix3d R_CtoW = R_WtoC.transpose();    // 旋转矩阵转置 R_CtoW 表示世界相对于当前相机帧的旋转 
+        Eigen::Vector3d T_CinW = -R_CtoW * T_WinC;      // 世界相对于当前相机帧的平移 = 世界相对于当前相机的旋转 * -相机相对于世界的平移
 
         Eigen::Quaterniond quaternion(R_CtoW);
 
-        pose_msg.pose.position.x = P_CinW(0);
-        pose_msg.pose.position.y = P_CinW(1);
-        pose_msg.pose.position.z = P_CinW(2);
+        pose_msg.pose.position.x = T_CinW(0);
+        pose_msg.pose.position.y = T_CinW(1);
+        pose_msg.pose.position.z = T_CinW(2);
 
         pose_msg.pose.orientation.x = quaternion.x();
         pose_msg.pose.orientation.y = quaternion.y();
         pose_msg.pose.orientation.z = quaternion.z();
         pose_msg.pose.orientation.w = quaternion.w();
+*/
+// 改写
+        Eigen::Quaterniond quaternion(R_WtoC);
 
-        cam_pose_pub_.publish(pose_msg);
+        pose_msg.pose.position.x = T_WinC(0);
+        pose_msg.pose.position.y = T_WinC(1);
+        pose_msg.pose.position.z = T_WinC(2);
+
+        pose_msg.pose.orientation.x = quaternion.x();
+        pose_msg.pose.orientation.y = quaternion.y();
+        pose_msg.pose.orientation.z = quaternion.z();
+        pose_msg.pose.orientation.w = quaternion.w();
+//
+
+
+
+
+
+        cam_pose_pub_.publish(pose_msg);        // 世界相对于当前帧相机的位姿
 
         // 将位姿添加到路径并发布路径
         path_.header.stamp = pose_msg.header.stamp;
+        path_.header.frame_id = "map";      // 初始化路径消息的坐标系为 "map"，与发布的 pose 保持一致，确保 RViz 中坐标系统一
         path_.poses.push_back(pose_msg);
         path_pub_.publish(path_);
 
@@ -222,8 +248,8 @@ void UcoSlamNode::publishMarkerArray() {
     visualization_msgs::MarkerArray marker_array;
     int id = 0;
 
-    for (const auto& m_pair : TheMap->map_markers) {
-        const auto& marker = m_pair.second;
+    for (const auto& m_pair : TheMap->map_markers) {        // for-range走的是基类的迭代器
+        const auto& marker = m_pair.second;                 // ucoslam::marker类型
         if (!marker.pose_g2m.isValid()) continue;
 
         visualization_msgs::Marker marker_msg;
@@ -232,28 +258,32 @@ void UcoSlamNode::publishMarkerArray() {
         marker_msg.ns = "aruco_markers";
         marker_msg.id = id++;
         marker_msg.type = visualization_msgs::Marker::CUBE;
-        marker_msg.action = visualization_msgs::Marker::ADD;
+        marker_msg.action = visualization_msgs::Marker::ADD;    // ADD新增或更新这个Marker | DELETE删除这个Marker | DELETEALL删除同一命名空间下所有 Marker（要单独发一个 MarkerArray）
         marker_msg.scale.x = 0.2;
         marker_msg.scale.y = 0.2;
         marker_msg.scale.z = 0.01;
         marker_msg.color.a = 1.0;
-        marker_msg.color.r = 1.0;
+        // marker_msg.color.r = 1.0;
+        // marker_msg.color.g = 0.6;
+        // marker_msg.color.b = 0.3;
+        marker_msg.color.r = 0.0;
         marker_msg.color.g = 0.0;
-        marker_msg.color.b = 0.0;
+        marker_msg.color.b = 1.0;
 
         // 从pose_g2m提取位姿信息
-        cv::Mat Rt = marker.pose_g2m.inv(); // 因为 pose_g2m 是从全局到marker，rviz中要画marker相对于全局的位置
+        // cv::Mat Rt = marker.pose_g2m.inv(); // 因为 pose_g2m 是从全局到marker，rviz中要画marker相对于全局的位置
+        cv::Mat Rt = marker.pose_g2m; // 因为 pose_g2m 是从全局到marker，rviz中要画marker相对于全局的位置
         cv::Mat R = Rt(cv::Range(0, 3), cv::Range(0, 3));
         cv::Mat t = Rt(cv::Range(0, 3), cv::Range(3, 4));
 
         // 转换为 geometry_msgs::Pose
-        tf::Matrix3x3 tf3d(
+        tf::Matrix3x3 tf3d(     // 把 OpenCV 的 3x3 旋转矩阵 R 转成 tf::Matrix3x3（Rviz 的旋转需要四元数）
             R.at<float>(0,0), R.at<float>(0,1), R.at<float>(0,2),
             R.at<float>(1,0), R.at<float>(1,1), R.at<float>(1,2),
             R.at<float>(2,0), R.at<float>(2,1), R.at<float>(2,2)
         );
-        tf::Quaternion q;
-        tf3d.getRotation(q);
+        tf::Quaternion q;       // 创建一个 tf::Quaternion，用于表示姿态的旋转
+        tf3d.getRotation(q);    // 从 tf3d 中提取四元数表示（R → q）
 
         marker_msg.pose.position.x = t.at<float>(0);
         marker_msg.pose.position.y = t.at<float>(1);
@@ -376,7 +406,7 @@ UcoSlamNode::UcoSlamNode(ros::NodeHandle& nh, ros::NodeHandle& private_nh) :
     
     marker_array_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("marker_array", 10);    // 发布marker可视化
     // 初始化路径消息
-    path_.header.frame_id = "map";      // 初始化路径消息的坐标系为 "map"，与发布的 pose 保持一致，确保 RViz 中坐标系统一
+    
 }
 
 UcoSlamNode::~UcoSlamNode() {}
@@ -463,16 +493,17 @@ void UcoSlamNode::processBagFile() {
                         // 图像畸变矫正
                         if (undistort_) {
                             cv::remap(in_image, auxImage, undistMap[0], undistMap[1], cv::INTER_LINEAR);
-                            
-                            in_image = auxImage;
+                            // cv::remap(in_image, auxImage, undistMap[0], undistMap[1], cv::INTER_CUBIC);
+                            // cv::remap(in_image, auxImage, undistMap[0], undistMap[1], cv::INTER_LANCZOS4);
+                            in_image = auxImage;    // 浅拷贝 内存共享
                         }
 
-                        // 处理图像并获取相机姿态       
-                        cv::Mat camPose_c2g = Slam.process(in_image/*newframe*/, image_params/*K*/, frameIndex);
+                        // 处理图像并获取相机姿态 相对于全局的位姿/每帧  
+                        cv::Mat camPose_c2g = Slam.process(in_image/* newframe& */, image_params/*K*/, frameIndex);
                         
 
                         // TODO 相机到雷达帧的位姿
-                        // TODO Aruco码相对雷达帧的位姿
+                        // 07.03 Aruco码相对 全局系 /雷达帧？/的位姿
                         // TODO 用于 Netvlad 的图片信息
 
 
@@ -486,7 +517,7 @@ void UcoSlamNode::processBagFile() {
 
                         // publishPath();              // 发布相机路径
 
-                        // 发布处理后的图像
+                        // TODO 添加下标的图像可能是从这里发出去的 发布处理后的图像
                         sensor_msgs::ImagePtr processed_msg = cv_bridge::CvImage(cv_image->header, "bgr8", in_image).toImageMsg();
                         processed_image_pub_.publish(processed_msg);
 
@@ -496,12 +527,15 @@ void UcoSlamNode::processBagFile() {
                     ROS_ERROR("cv_bridge error: %s", e.what());
                 }
             }
-            if (msg.getTopic() == lidar_topic_) {   // 处理Lidar数据
+            // if (msg.getTopic() == lidar_topic_) {   // 处理Lidar数据
                 
-                // TODO 雷达全部帧位姿(要从r3live拿)
-                // TODO 雷达关键帧位姿
+            //     // TODO 雷达全部帧位姿(要从r3live拿)
+            //     // TODO 雷达关键帧位姿
+            //     sensor_msgs::PointCloud2ConstPtr cloud_msg = msg.instantiate<sensor_msgs::PointCloud2>();
+            //     if (cloud_msg) {
+            //         processPointCloud(cloud_msg);}
 
-            } 
+            // } 
         }
 
     } catch (const std::exception &ex) {

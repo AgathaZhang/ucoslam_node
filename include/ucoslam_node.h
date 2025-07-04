@@ -84,6 +84,9 @@ private:
 
     nav_msgs::Path path_;
 
+    // sensor_msgs::PointCloud2 merged_msg_global;
+    // sensor_msgs::PointCloud2 merged_msg;
+
     ros::NodeHandle nh_;
     ros::NodeHandle private_nh_;
 
