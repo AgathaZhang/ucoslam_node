@@ -38,14 +38,14 @@
 
 
 struct PointXYZRTLT {
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW     // maloc或new 对齐
     PCL_ADD_POINT4D;
     PCL_ADD_INTENSITY;
     uint8_t tag;
     uint8_t line;
     double timestamp;
-} EIGEN_ALIGN16;
-POINT_CLOUD_REGISTER_POINT_STRUCT(PointXYZRTLT,
+} EIGEN_ALIGN16;                        // vector堆栈对齐
+POINT_CLOUD_REGISTER_POINT_STRUCT(PointXYZRTLT, // PCL注册
                                   (float, x, x)(float, y, y)(float, z, z)(float, intensity, intensity)(
                                       std::uint8_t, tag, tag)(std::uint8_t, line, line)(double, timestamp, timestamp))
 
@@ -62,7 +62,15 @@ public:
     void publishPointCloud();
     void publishMarkerArray();     // Agatha 06.17 发布aruco_array标记
     // void publishMarker();       // Agatha 06.17 发布aruco标记
-    // void publishPath();         // Agatha 06.17 发布相机路径
+    // void publishPath();         // Agatha 06.17 发布相机路径(弃用)
+
+    bool clearOutputFiles();
+    bool camera_full_trajectory(geometry_msgs::PoseStamped);
+    bool full_trajectory_total_key(bool, geometry_msgs::PoseStamped pose_msg);// bool 控制是否为关键帧
+    bool full_trajectory(geometry_msgs::PoseStamped pose_msg);
+    // bool export_marker_increment_txt(const cv_bridge::CvImageConstPtr&);   // txt文档输出(弃用)
+    void write_aruco_marker();
+
     void loadLidarExtrinsics(const std::string& file);
     void publishMergedPointCloud();
     void TransformToEnd(PointXYZRTLT const *const pi, PointXYZRTLT *const po, const double end_time, Eigen::Quaternionf q_last_curr, Eigen::Vector3f t_last_curr);
@@ -83,7 +91,7 @@ private:
     image_transport::Publisher rviz_img_pub_;       // rviz show undistortion image 06.27
 
     nav_msgs::Path path_;
-
+    geometry_msgs::PoseStamped pose_msg_usefor_txt; // 07.07 中转存储单次相机位姿
     // sensor_msgs::PointCloud2 merged_msg_global;
     // sensor_msgs::PointCloud2 merged_msg;
 
@@ -91,11 +99,12 @@ private:
     ros::NodeHandle private_nh_;
 
     // VO output file_path 06.26
-    std::string full_trajectory_total_path;
-    std::string full_trajectory_path;
-    std::string camera_trajectory_path;
-    std::string marker_path;
-    std::string output_path = "/home/kilox/cloud_mapping/src/ucoslam2/test_bag/outputfile";
+    std::string output_path = "/home/kilox/cloud_mapping/src/ucoslam2/test_bag/outputfile/";
+    std::string full_trajectory_total_path = output_path + "full_trajectory_total_key.txt";
+    std::string full_trajectory_path = output_path + "full_trajectory.txt";
+    std::string camera_trajectory_path = output_path + "camera_trajectory_path.txt";
+    std::string marker_path = output_path + "aruco_camera_trajectory.txt";
+
 
     std::string bag_file_;
     std::string camera_params_file_;
@@ -106,6 +115,8 @@ private:
     std::string vocab_file_;
     std::string save_merged_pointcloud_file_;
     std::string save_map_file_;
+    bool generate_txt = true;
+    // bool generate_txt = false;
     bool loc_only_;
     bool undistort_;
     int debug_level_;

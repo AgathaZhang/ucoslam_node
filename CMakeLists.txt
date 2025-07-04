@@ -236,10 +236,10 @@ add_compile_definitions(
 
 
 # 设置编译选项，-g 用于生成调试信息 25.06.09
-# add_compile_options(-g)
+add_compile_options(-g)
 # 设置编译类型为 Debug，并添加调试信息  25.06.09
-# set(CMAKE_BUILD_TYPE Debug)
-set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
+set(CMAKE_BUILD_TYPE Debug)
+# set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build, options are: Debug Release RelWithDebInfo MinSizeRel." FORCE)
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 

@@ -9,8 +9,8 @@
 // 对时间辍进行处理只保留小数点后两位
 double UcoSlamNode::fixNum(double num) {
     double factor = 1e2; // 放大1e2倍
-    num = std::trunc(num * factor) / factor; // 截断小数点后两位
-    // return std::trunc(num);
+    // num = std::trunc(num * factor) / factor; // 截断小数点后两位
+    return std::trunc(num);
     return num;
 }
 
@@ -41,7 +41,11 @@ void UcoSlamNode::loadLidarExtrinsics(const std::string& file) {
 }
 
 // 点云去畸变处理
-void UcoSlamNode::TransformToEnd(PointXYZRTLT const *const pi, PointXYZRTLT *const po, const double begin_time, Eigen::Quaternionf q_last_curr, Eigen::Vector3f t_last_curr) {
+void UcoSlamNode::TransformToEnd(PointXYZRTLT const *const pi,  // 去畸变前
+                                    PointXYZRTLT *const po,     // 去畸变后
+                                    const double begin_time,    // cloud->back().timestamp 时间升序 小时间在前
+                                    Eigen::Quaternionf q_last_curr, // 雷达帧在世界的Q
+                                    Eigen::Vector3f t_last_curr){   // 雷达帧在世界的t
     
     // interpolation ratio
     double s;
@@ -101,7 +105,7 @@ void UcoSlamNode::publishPose(const cv::Mat& camPose_c2g, const cv_bridge::CvIma
 
         // 提取旋转矩阵
         cv::Mat rotation = camPose_c2g(cv::Rect(0, 0, 3, 3)); // 左上角3x3子矩阵
-
+        std::cout << "rotation: " << rotation << std::endl;
         // 将cv::Mat转换为Eigen::Matrix3d
         Eigen::Matrix3d R_WtoC;
         for (int i = 0; i < 3; ++i) {
@@ -111,7 +115,7 @@ void UcoSlamNode::publishPose(const cv::Mat& camPose_c2g, const cv_bridge::CvIma
         }
 
         Eigen::Vector3d T_WinC(camPose_c2g.at<float>(0, 3), camPose_c2g.at<float>(1, 3), camPose_c2g.at<float>(2, 3));
-/**
+
         Eigen::Matrix3d R_CtoW = R_WtoC.transpose();    // 旋转矩阵转置 R_CtoW 表示世界相对于当前相机帧的旋转 
         Eigen::Vector3d T_CinW = -R_CtoW * T_WinC;      // 世界相对于当前相机帧的平移 = 世界相对于当前相机的旋转 * -相机相对于世界的平移
 
@@ -125,33 +129,20 @@ void UcoSlamNode::publishPose(const cv::Mat& camPose_c2g, const cv_bridge::CvIma
         pose_msg.pose.orientation.y = quaternion.y();
         pose_msg.pose.orientation.z = quaternion.z();
         pose_msg.pose.orientation.w = quaternion.w();
-*/
-// 改写
-        Eigen::Quaterniond quaternion(R_WtoC);
 
-        pose_msg.pose.position.x = T_WinC(0);
-        pose_msg.pose.position.y = T_WinC(1);
-        pose_msg.pose.position.z = T_WinC(2);
-
-        pose_msg.pose.orientation.x = quaternion.x();
-        pose_msg.pose.orientation.y = quaternion.y();
-        pose_msg.pose.orientation.z = quaternion.z();
-        pose_msg.pose.orientation.w = quaternion.w();
-//
-
-
-
-
-
+        pose_msg_usefor_txt = pose_msg;         // 给到类成员中转给write txt
         cam_pose_pub_.publish(pose_msg);        // 世界相对于当前帧相机的位姿
 
         // 将位姿添加到路径并发布路径
         path_.header.stamp = pose_msg.header.stamp;
         path_.header.frame_id = "map";      // 初始化路径消息的坐标系为 "map"，与发布的 pose 保持一致，确保 RViz 中坐标系统一
-        path_.poses.push_back(pose_msg);
+        path_.poses.push_back(pose_msg);    // TODO 这里带宽限制要加滑动窗口 定期写文件 或者改用 Odometry
         path_pub_.publish(path_);
 
         pose_map_[fixNum(cv_image->header.stamp.toSec())] = pose_msg;
+/** 写入txt*/
+        // camera_full_trajectory(pose_msg_usefor_txt);        // 利用pose_msg_usefor_txt中转 放到集合块
+
     } catch (const cv_bridge::Exception& e) {
         ROS_ERROR("cv_bridge error: %s", e.what());
     }
@@ -174,7 +165,7 @@ Eigen::Matrix4f UcoSlamNode::getTransformFromPose(const geometry_msgs::PoseStamp
 
 // 处理点云数据
 void UcoSlamNode::processPointCloud(const sensor_msgs::PointCloud2ConstPtr& cloud_msg) {
-    // Find corresponding pose by timestamp
+    // Find corresponding pose by timestamp // TODO 相机到雷达帧的位姿 外参变换
     auto it = pose_map_.find(fixNum(cloud_msg->header.stamp.toSec()));
     if (it == pose_map_.end()) {
         ROS_WARN("No matching pose found for point cloud at time: %f", cloud_msg->header.stamp.toSec());
@@ -190,7 +181,7 @@ void UcoSlamNode::processPointCloud(const sensor_msgs::PointCloud2ConstPtr& clou
     pcl::fromROSMsg(*cloud_msg, *cloud);
 
     // Transform point cloud using camera-to-lidar extrinsics and pose
-    Eigen::Matrix4f transform = getTransformFromPose(pose) * lidar_to_camera_transform_;
+    Eigen::Matrix4f transform = getTransformFromPose(pose) * lidar_to_camera_transform_;    // 世界位姿 * 雷达外参
     Eigen::Matrix4f last_to_cur;
 
     static bool is_first = true;
@@ -202,10 +193,10 @@ void UcoSlamNode::processPointCloud(const sensor_msgs::PointCloud2ConstPtr& clou
         last_to_cur =  transform.inverse() * last_lidar_to_world;
     }
 
-    Eigen::Quaternionf quaternion(last_to_cur.topLeftCorner<3, 3>());
+    Eigen::Quaternionf quaternion(last_to_cur.topLeftCorner<3, 3>());   // 转成Eigen Q|t
     Eigen::Vector3f translation = last_to_cur.topRightCorner<3, 1>();
 
-    pcl::PointCloud<PointXYZRTLT>::Ptr undispoint_cloud(new pcl::PointCloud<PointXYZRTLT>);
+    pcl::PointCloud<PointXYZRTLT>::Ptr undispoint_cloud(new pcl::PointCloud<PointXYZRTLT>);     // 定义去畸变点云
     undispoint_cloud->reserve(cloud->points.size());
     std::sort(cloud->begin(), cloud->end(), [](const PointXYZRTLT & a, const PointXYZRTLT & b)
     {
@@ -215,7 +206,7 @@ void UcoSlamNode::processPointCloud(const sensor_msgs::PointCloud2ConstPtr& clou
     // 点云去畸变
     for (const auto& point : cloud->points) {
         PointXYZRTLT undis_point;
-        TransformToEnd(&point, &undis_point, cloud->back().timestamp, quaternion, translation);
+        TransformToEnd(&point, &undis_point, cloud->back().timestamp, quaternion, translation);     
         undispoint_cloud->points.push_back(undis_point);
     }
 
@@ -240,6 +231,71 @@ void UcoSlamNode::publishMergedPointCloud() {
 
     // Publish merged point cloud
     merged_pointcloud_pub_.publish(merged_msg);
+}
+
+// std_msgs/Header header         // 时间戳与参考坐标系
+// uint32_t height                // 点云高度（行数）
+// uint32_t width                 // 点云宽度（列数），height × width = 点数
+// bool is_bigendian             // 数据是否为大端字节序（一般为 false）
+// uint32_t point_step           // 单个点的字节数
+// uint32_t row_step             // 一行数据的总字节数
+// std::vector<sensor_msgs::PointField> fields  // 点字段定义，比如 x, y, z, rgb
+// bool is_dense                 // 是否为密集点云（true：无非法点）
+// std::vector<uint8_t> data     // 点数据字节流（按照 fields 描述的格式组织）
+
+// 视觉特征点点云
+void UcoSlamNode::publishPointCloud() {
+    if (!TheMap) {
+        ROS_WARN("Map is not initialized.");
+        return;
+    }
+
+    sensor_msgs::PointCloud2 cloud_msg;
+    cloud_msg.header.stamp = ros::Time::now();
+    cloud_msg.header.frame_id = "map";
+
+    // 填充点云数据
+    std::vector<sensor_msgs::PointField> fields(3);
+    fields[0].name = "x";
+    fields[0].offset = 0;       // 指定 "x" 坐标在每个点数据结构中的字节偏移量，这里从第 0 个字节开始
+    fields[0].datatype = sensor_msgs::PointField::FLOAT32;// 设置 "x" 坐标的数据类型，这里使用 32 位浮点型（对应于 float）
+    fields[0].count = 1;        // 设置 "x" 坐标在每个点里只占 1 个值（不是数组）
+
+    fields[1].name = "y";
+    fields[1].offset = 4;
+    fields[1].datatype = sensor_msgs::PointField::FLOAT32;
+    fields[1].count = 1;
+
+    fields[2].name = "z";
+    fields[2].offset = 8;
+    fields[2].datatype = sensor_msgs::PointField::FLOAT32;
+    fields[2].count = 1;
+
+    cloud_msg.fields = fields;
+    cloud_msg.point_step = 12;          // 每个点占用的字节数 (3 * 4 bytes)
+    cloud_msg.is_bigendian = false;     // 数据是否为大端字节序
+    cloud_msg.is_dense = true;          // 点字段定义，比如 x, y, z, rgb
+
+    // 遍历 TheMap 中的点云
+    const auto& map_points = TheMap->map_points;
+    cloud_msg.width = map_points.size();
+    cloud_msg.height = 1;
+    cloud_msg.row_step = cloud_msg.point_step * cloud_msg.width;    // 一行数据的总字节数
+    cloud_msg.data.resize(cloud_msg.row_step);                      // 点数据字节流（按照 fields 描述的格式组织）
+
+    uint8_t* ptr = cloud_msg.data.data();
+    for (const auto& map_point : map_points) {
+        if (map_point.isBad()) continue; // 跳过无效点
+        const auto& pos = map_point.getCoordinates();
+        float* data_ptr = reinterpret_cast<float*>(ptr);
+        data_ptr[0] = pos.x;
+        data_ptr[1] = pos.y;
+        data_ptr[2] = pos.z;
+        ptr += cloud_msg.point_step;
+    }
+
+    // 发布点云
+    pointcloud_pub_.publish(cloud_msg);
 }
 
 void UcoSlamNode::publishMarkerArray() {
@@ -299,75 +355,272 @@ void UcoSlamNode::publishMarkerArray() {
     marker_array_pub_.publish(marker_array);
 }
 
+bool UcoSlamNode::clearOutputFiles() {
+    // 定义要删除的路径
+    std::vector<std::string> files = {
+        full_trajectory_total_path,
+        full_trajectory_path,
+        camera_trajectory_path,
+        marker_path
+    };
 
-// std_msgs/Header header         // 时间戳与参考坐标系
-// uint32_t height                // 点云高度（行数）
-// uint32_t width                 // 点云宽度（列数），height × width = 点数
-// bool is_bigendian             // 数据是否为大端字节序（一般为 false）
-// uint32_t point_step           // 单个点的字节数
-// uint32_t row_step             // 一行数据的总字节数
-// std::vector<sensor_msgs::PointField> fields  // 点字段定义，比如 x, y, z, rgb
-// bool is_dense                 // 是否为密集点云（true：无非法点）
-// std::vector<uint8_t> data     // 点数据字节流（按照 fields 描述的格式组织）
+    bool all_ok = true;
 
-// 视觉特征点点云
-void UcoSlamNode::publishPointCloud() {
-    if (!TheMap) {
-        ROS_WARN("Map is not initialized.");
-        return;
+    for (const auto& file : files) {
+        if (std::remove(file.c_str()) == 0) {
+            ROS_INFO("Deleted file: %s", file.c_str());
+        } else {
+            ROS_WARN("Failed to delete (may not exist): %s", file.c_str());
+            all_ok = false;  // 只要有失败就标记
+        }
     }
 
-    sensor_msgs::PointCloud2 cloud_msg;
-    cloud_msg.header.stamp = ros::Time::now();
-    cloud_msg.header.frame_id = "map";
-
-    // 填充点云数据
-    std::vector<sensor_msgs::PointField> fields(3);
-    fields[0].name = "x";
-    fields[0].offset = 0;
-    fields[0].datatype = sensor_msgs::PointField::FLOAT32;
-    fields[0].count = 1;
-
-    fields[1].name = "y";
-    fields[1].offset = 4;
-    fields[1].datatype = sensor_msgs::PointField::FLOAT32;
-    fields[1].count = 1;
-
-    fields[2].name = "z";
-    fields[2].offset = 8;
-    fields[2].datatype = sensor_msgs::PointField::FLOAT32;
-    fields[2].count = 1;
-
-    cloud_msg.fields = fields;
-    cloud_msg.point_step = 12;          // 每个点占用的字节数 (3 * 4 bytes)
-    cloud_msg.is_bigendian = false;     // 数据是否为大端字节序
-    cloud_msg.is_dense = true;          // 点字段定义，比如 x, y, z, rgb
-
-    // 遍历 TheMap 中的点云
-    const auto& map_points = TheMap->map_points;
-    cloud_msg.width = map_points.size();
-    cloud_msg.height = 1;
-    cloud_msg.row_step = cloud_msg.point_step * cloud_msg.width;    // 一行数据的总字节数
-    cloud_msg.data.resize(cloud_msg.row_step);                      // 点数据字节流（按照 fields 描述的格式组织）
-
-    uint8_t* ptr = cloud_msg.data.data();
-    for (const auto& map_point : map_points) {
-        if (map_point.isBad()) continue; // 跳过无效点
-        const auto& pos = map_point.getCoordinates();
-        float* data_ptr = reinterpret_cast<float*>(ptr);
-        data_ptr[0] = pos.x;
-        data_ptr[1] = pos.y;
-        data_ptr[2] = pos.z;
-        ptr += cloud_msg.point_step;
-    }
-
-    // 发布点云
-    pointcloud_pub_.publish(cloud_msg);
+    return all_ok; // 全部成功 true，否则 false
 }
+
+bool UcoSlamNode::camera_full_trajectory(geometry_msgs::PoseStamped pose_msg){
+// 格式: camera_full_trajectory.txt 图像时间 雷达时间 t^3 Q^4
+
+// 3. 如果要写格式化内容，也可以直接写
+// 在函数内部定义一个 Lambda，用于写一行位姿信息
+auto write_pose_line = [](std::ofstream& ofs, const geometry_msgs::PoseStamped& pose) {
+    ofs << std::fixed << std::setprecision(16)
+        << pose.header.stamp.toSec() << " "    // 图像时间
+        << std::setprecision(16) << " "
+        << pose.header.stamp.toSec() << " "    // 示例：也可以放雷达时间
+        << pose.pose.position.x << " "
+        << pose.pose.position.y << " "
+        << pose.pose.position.z << " "
+        << pose.pose.orientation.x << " "
+        << pose.pose.orientation.y << " "
+        << pose.pose.orientation.z << " "
+        << pose.pose.orientation.w << std::endl;
+};
+
+
+// 1. 使用 stat 检查文件是否存在
+    struct stat buffer;
+    if (stat(camera_trajectory_path.c_str(), &buffer) == 0) {
+        // 文件存在 → 追加写
+        std::ofstream outfile(camera_trajectory_path, std::ios::app);
+        if (!outfile) {
+            ROS_ERROR("Failed to open existing file for appending: %s", camera_trajectory_path.c_str());
+            return false;
+        }
+        write_pose_line(outfile, pose_msg);
+        outfile.close();
+        return true;
+    }
+
+    // 2. 文件不存在，创建新文件
+    std::ofstream outfile(camera_trajectory_path);
+    if (!outfile) {
+        ROS_ERROR("Failed to create file: %s", camera_trajectory_path.c_str());
+        return false; // 创建失败
+    }
+
+    ROS_INFO("Created new file: %s", camera_trajectory_path.c_str());
+    write_pose_line(outfile, pose_msg);
+    outfile.close();
+
+    return true;
+}
+
+bool UcoSlamNode::full_trajectory_total_key(bool is_KF, geometry_msgs::PoseStamped pose_msg){
+// full_trajectory_total_key.txt    关键帧 ros时间 t^3 Q^4
+// TODO 靠外参矩阵转回去
+
+auto write_full_trajectory_total_key = [](std::ofstream& ofs, bool flag, const geometry_msgs::PoseStamped& pose) {
+    ofs << std::fixed << std::setprecision(16)
+        << (flag ? "1" : "0") << " "                 // 第1项：bool值（true=1, false=0）
+        << pose.header.stamp.toSec() << " "      // TODO 这里需要再仔细检查一下格式 第2项：ROS时间  
+        << pose.pose.position.x << " "           // 第3项：t.x
+        << pose.pose.position.y << " "           // 第4项：t.y
+        << pose.pose.position.z << " "           // 第5项：t.z
+        << pose.pose.orientation.x << " "        // 第6项：q.x
+        << pose.pose.orientation.y << " "        // 第7项：q.y
+        << pose.pose.orientation.z << " "        // 第8项：q.z
+        << pose.pose.orientation.w << std::endl; // 第9项：q.w
+};
+
+// 1. 使用 stat 检查文件是否存在
+    struct stat buffer;
+    if (stat(full_trajectory_total_path.c_str(), &buffer) == 0) {
+        // 文件存在 → 追加写
+        std::ofstream outfile(full_trajectory_total_path, std::ios::app);
+        if (!outfile) {
+            ROS_ERROR("Failed to open existing file for appending: %s", full_trajectory_total_path.c_str());
+            return false;
+        }
+        write_full_trajectory_total_key(outfile, is_KF, pose_msg);
+        outfile.close();
+        return true;
+    }
+
+    // 2. 文件不存在，创建新文件
+    std::ofstream outfile(full_trajectory_total_path);
+    if (!outfile) {
+        ROS_ERROR("Failed to create file: %s", full_trajectory_total_path.c_str());
+        return false; // 创建失败
+    }
+
+    ROS_INFO("Created new file: %s", full_trajectory_total_path.c_str());
+    write_full_trajectory_total_key(outfile, is_KF, pose_msg);
+    outfile.close();
+
+    return true;
+
+    
+}
+
+bool UcoSlamNode::full_trajectory(geometry_msgs::PoseStamped pose_msg){
+// full_trajectory.txt  关键帧 ros时间 t^3 Q^4
+// TODO 靠外参矩阵转回去
+
+auto write_full_trajectory = [](std::ofstream& ofs, const geometry_msgs::PoseStamped& pose) {
+    ofs << std::fixed << std::setprecision(16)
+        << "1" << " "                 // 第1项：bool值（true=1, false=0）
+        << pose.header.stamp.toSec() << " "      // 第2项：ROS时间
+        << pose.pose.position.x << " "           // 第3项：t.x
+        << pose.pose.position.y << " "           // 第4项：t.y
+        << pose.pose.position.z << " "           // 第5项：t.z
+        << pose.pose.orientation.x << " "        // 第6项：q.x
+        << pose.pose.orientation.y << " "        // 第7项：q.y
+        << pose.pose.orientation.z << " "        // 第8项：q.z
+        << pose.pose.orientation.w << std::endl; // 第9项：q.w
+};
+
+// 1. 使用 stat 检查文件是否存在
+    struct stat buffer;
+    if (stat(full_trajectory_path.c_str(), &buffer) == 0) {
+        // 文件存在 → 追加写
+        std::ofstream outfile(full_trajectory_path, std::ios::app);
+        if (!outfile) {
+            ROS_ERROR("Failed to open existing file for appending: %s", full_trajectory_path.c_str());
+            return false;
+        }
+        write_full_trajectory(outfile, pose_msg);
+        outfile.close();
+        return true;
+    }
+
+    // 2. 文件不存在，创建新文件
+    std::ofstream outfile(full_trajectory_path);
+    if (!outfile) {
+        ROS_ERROR("Failed to create file: %s", full_trajectory_path.c_str());
+        return false; // 创建失败
+    }
+
+    ROS_INFO("Created new file: %s", full_trajectory_path.c_str());
+    write_full_trajectory(outfile, pose_msg);
+    outfile.close();
+
+    return true;
+
+}
+/** 输出pcd文件*/
+// void write_camera_and_lidar_trajectory(std::string filename){
+//     std::fstream outfile;
+//     outfile.open(filename.c_str(), std::istream::out);
+
+//     if (!outfile) {
+//         std::cout << "Error opening the file: " << filename<<std::endl;
+//         return;
+//     }
+
+//     if (cloudKeyPoses3D->points.empty())
+//     {
+//         std::cout<<"没有任何关键帧，建图结束"<<std::endl;
+//         return;
+//     }
+
+//     boost::filesystem::path meta_folder = "/home/kilox/wutong/data";
+//     if (boost::filesystem::exists(meta_folder)) {
+//         boost::filesystem::remove_all(meta_folder);
+//     }
+//     boost::filesystem::create_directory(meta_folder);
+//     if (true)
+//     {
+
+//         int numPoses = isamCurrentEstimate.size();
+//         for (int i = 0; i < numPoses; ++i)
+//         {
+//             cloudKeyPoses3D->points[i].x = isamCurrentEstimate.at<gtsam::Pose3>(i).translation().x();
+//             cloudKeyPoses3D->points[i].y = isamCurrentEstimate.at<gtsam::Pose3>(i).translation().y();
+//             cloudKeyPoses3D->points[i].z = isamCurrentEstimate.at<gtsam::Pose3>(i).translation().z();
+
+//             cloudKeyPoses6D->points[i].x = cloudKeyPoses3D->points[i].x;
+//             cloudKeyPoses6D->points[i].y = cloudKeyPoses3D->points[i].y;
+//             cloudKeyPoses6D->points[i].z = cloudKeyPoses3D->points[i].z;
+//             cloudKeyPoses6D->points[i].roll = isamCurrentEstimate.at<gtsam::Pose3>(i).rotation().roll();
+//             cloudKeyPoses6D->points[i].pitch = isamCurrentEstimate.at<gtsam::Pose3>(i).rotation().pitch();
+//             cloudKeyPoses6D->points[i].yaw = isamCurrentEstimate.at<gtsam::Pose3>(i).rotation().yaw();
+            
+//             Eigen::Quaterniond q_lidar = EulerToQuat(cloudKeyPoses6D->points[i].roll, cloudKeyPoses6D->points[i].pitch, cloudKeyPoses6D->points[i].yaw);
+//             outfile<<"1"<<" " <<std::setprecision (16)<< cloudKeyPoses6D->points[i].time << " " << cloudKeyPoses3D->points[i].x << " "<< cloudKeyPoses3D->points[i].y << " "<<cloudKeyPoses3D->points[i].z << " "
+//             << q_lidar.x() << " " << q_lidar.y() << " "
+//             << q_lidar.z() << " " << q_lidar.w() << '\n';
+//             // updatePath(cloudKeyPoses6D->points[i]);
+//             std::stringstream path_pcd;
+//             path_pcd <<"/home/kilox/wutong/data/"<< std::setprecision (16)  << cloudKeyPoses6D->points[i].time<<".pcd";
+            
+//             if(surfCloudKeyFrames[i]->points.size()>0){
+//                 pcl::io::savePCDFileBinary(path_pcd.str(), *transformPointCloud_loopdetect(surfCloudKeyFrames[i], &cloudKeyPoses6D->points[i]));
+//             }//TODO SAVE
+//             // surfCloudKeyFrames[i]
+            
+//         }
+//         ROS_INFO("====== finish save trajectory file =======");
+//     }
+// }
+
+/** Old deal marker*/
+// bool UcoSlamNode::export_marker_increment_txt(const cv_bridge::CvImageConstPtr& cv_image){
+
+    // geometry_msgs::PoseStamped pose_msg;
+    // pose_msg.header.stamp = cv_image->header.stamp;
+
+    // std::stringstream write_loop_bag_stream;
+    // write_loop_bag_stream << std::setprecision (16)  << image_time_stamp <<" " <<std::setprecision (16)<< current_lidar_time << " " << camera2lidar.t_(0) << " "<<camera2lidar.t_(1) << " "<<camera2lidar.t_(2) << " "
+    //                         << camera2lidar.GetQ().x() << " " << camera2lidar.GetQ().y() << " "
+    //                         << camera2lidar.GetQ().z() << " " << camera2lidar.GetQ().w() << '\n';
+
+    // full_camera_trajectory_str += write_loop_bag_stream.str();
+    // full_camera_trajectory_empty = false;
+
+// }
+/** refrence deal marker*/
+// void UcoSlamNode::write_aruco_marker(){
+
+//     std::cout<<"Begin to write aruco marker:" << marker_path <<std::endl;
+//     std::string full_camera_trajectory_str = "";
+//     std::fstream outfile;
+//     outfile.open("/home/kilox/wutong/loop_detect/aruco_camera_trajectory.txt", std::istream::out);
+//     for(auto item_aruco:arucoTags_map){
+//         int markerID=item_aruco.first;
+//         ArucoTag* aruco = item_aruco.second;
+//         EigenPose marker_to_world(aruco->R_w_m,aruco->t_w_m);
+//         EigenPose marker_to_camera(aruco->R_c_m,aruco->t_c_m);
+
+//         std::stringstream write_loop_bag_stream;
+//         //0是左目
+//         write_loop_bag_stream<<aruco->id <<" " << std::setprecision (16)  << aruco->time_stamp <<" " <<std::setprecision (16)<< aruco->lidar_time_stamp << " " << marker_to_camera.t_(0) << " "<<marker_to_camera.t_(1) << " "<<marker_to_camera.t_(2) << " "
+//                               << marker_to_camera.GetQ().x() << " " << marker_to_camera.GetQ().y() << " "
+//                               << marker_to_camera.GetQ().z() << " " << marker_to_camera.GetQ().w() << '\n';
+//         full_camera_trajectory_str += write_loop_bag_stream.str();
+//     }
+//     outfile << full_camera_trajectory_str;
+//     outfile.flush();
+//     outfile.close();
+//     std::cout<<"end to write aruco marker"<<std::endl;
+// }
+
+
 // constructure function
 UcoSlamNode::UcoSlamNode(ros::NodeHandle& nh, ros::NodeHandle& private_nh) : 
     nh_(nh), private_nh_(private_nh),rviz_img_(nh){
-
+    
+    clearOutputFiles();
     std::string verify; 
     private_nh_.param("param_verify", verify, std::string("not_set"));
     ROS_INFO_STREAM("[DEBUG] Parameter param_verify = " << verify);  
@@ -454,6 +707,8 @@ void UcoSlamNode::processBagFile() {
 
         // 初始化图像处理
         cv::Mat in_image, auxImage;
+        size_t prev_keyframe_number;    // 当前关键帧数量
+        bool whether_KF;          // 本轮是否为关键帧
         if (undistort_) {
             if (undistMap.empty()) {
                 undistMap.resize(2);
@@ -499,10 +754,8 @@ void UcoSlamNode::processBagFile() {
                         }
 
                         // 处理图像并获取相机姿态 相对于全局的位姿/每帧  
-                        cv::Mat camPose_c2g = Slam.process(in_image/* newframe& */, image_params/*K*/, frameIndex);
-                        
+                        cv::Mat camPose_c2g = Slam.process(in_image/* newframe& */, image_params/*K*/, frameIndex);                        
 
-                        // TODO 相机到雷达帧的位姿
                         // 07.03 Aruco码相对 全局系 /雷达帧？/的位姿
                         // TODO 用于 Netvlad 的图片信息
 
@@ -510,10 +763,21 @@ void UcoSlamNode::processBagFile() {
                         // 发布位姿
                         publishPose(camPose_c2g, cv_image);
 
-                        // 发布点云
-                        publishPointCloud();               // TODO 发布点云
+                        if (generate_txt)
+                        {
+                            camera_full_trajectory(pose_msg_usefor_txt);
+                            // 要放在camera_full_trajectory(pose_msg)后面
+                            if(TheMap->keyframes.size() > prev_keyframe_number){    // TODO 这个判断是否鲁棒还需研判
+                                prev_keyframe_number = TheMap->keyframes.size();
+                                whether_KF = full_trajectory(pose_msg_usefor_txt);
+                            }
+                            else whether_KF = 0;
+                            full_trajectory_total_key(whether_KF, pose_msg_usefor_txt);
+                        }
 
-                        publishMarkerArray();            // 发布地图标记
+                        // publishPointCloud();               // TODO 发布点云
+
+                        // publishMarkerArray();            // 发布地图标记
 
                         // publishPath();              // 发布相机路径
 
@@ -527,15 +791,15 @@ void UcoSlamNode::processBagFile() {
                     ROS_ERROR("cv_bridge error: %s", e.what());
                 }
             }
-            // if (msg.getTopic() == lidar_topic_) {   // 处理Lidar数据
+            if (msg.getTopic() == lidar_topic_) {   // 处理Lidar数据
                 
-            //     // TODO 雷达全部帧位姿(要从r3live拿)
-            //     // TODO 雷达关键帧位姿
-            //     sensor_msgs::PointCloud2ConstPtr cloud_msg = msg.instantiate<sensor_msgs::PointCloud2>();
-            //     if (cloud_msg) {
-            //         processPointCloud(cloud_msg);}
+                // TODO 雷达全部帧位姿(要从r3live拿)
+                // TODO 雷达关键帧位姿
+                sensor_msgs::PointCloud2ConstPtr cloud_msg = msg.instantiate<sensor_msgs::PointCloud2>();
+                if (cloud_msg) {
+                    processPointCloud(cloud_msg);}
 
-            // } 
+            } 
         }
 
     } catch (const std::exception &ex) {
